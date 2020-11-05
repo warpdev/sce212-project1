@@ -9,7 +9,7 @@
  * For debug option. If you want to debug, set 1.
  * If not, set 0.
  */
-#define DEBUG 0
+#define DEBUG 1
 
 #define MAX_SYMBOL_TABLE_SIZE   1024
 #define MEM_TEXT_START          0x00400000
@@ -138,19 +138,71 @@ void record_text_section(FILE *output)
         char label[32] = {0};
         char type = '0';
         int i, idx = 0;
-        int rs, rt, rd, imm, shamt;
+        int rs, rt, rd, shamt;
         int addr;
+        uint32_t imm;
 
         rs = rt = rd = imm = shamt = addr = 0;
 #if DEBUG
         printf("0x%08x: ", cur_addr);
+        printf("%s",line);
 #endif
         /* Find the instruction type that matches the line */
         /* blank */
+        char *temp;
+        temp=strtok(line,"\t\n");
+        for(i=0; i<INST_LIST_LEN; i++)
+        {
+            if(!strcmp(inst_list[i].name,temp))
+            {
+                strcpy(inst,inst_list[i].name);
+                strcpy(op,inst_list[i].op);
+                type=inst_list[i].type;
+                idx=i;
+                break;
+            }
+        }
 
         switch (type) {
             case 'R':
                 /* blank */
+                fprintf(output,"%s",op);
+                if(idx==8)
+                {
+                    temp=strtok(NULL,", \t\n");
+                    rs=atoi(&temp[1]);
+                }
+                else
+                {
+                    temp=strtok(NULL,", \n\t");
+                    rd=atoi(&temp[1]);
+                    if(idx!=16 && idx!=17)
+                    {
+                        temp=strtok(NULL,", \n\t");
+                        rs=atoi(&temp[1]);
+                    }
+                    temp=strtok(NULL,", \n\t");
+                    rt=atoi(&temp[1]);
+                    if(idx==16 || idx==17)
+                    {
+                        temp=strtok(NULL,", \t\n");
+                        shamt=atoi(temp);
+                    }
+                }
+                
+                fprintf(output,"%s",num_to_bits(rs,5));
+                fprintf(output,"%s",num_to_bits(rt,5));
+                fprintf(output,"%s",num_to_bits(rd,5));
+                fprintf(output,"%s",num_to_bits(shamt,5));
+                if(atoi(inst_list[idx].funct))
+                {
+                    fprintf(output,"%s",inst_list[idx].funct);
+                }
+                else
+                {
+                    fprintf(output,"%s",num_to_bits(0,6));
+                }
+                
 #if DEBUG
                 printf("op:%s rs:$%d rt:$%d rd:$%d shamt:%d funct:%s\n",
                         op, rs, rt, rd, shamt, inst_list[idx].funct);
@@ -159,6 +211,67 @@ void record_text_section(FILE *output)
 
             case 'I':
                 /* blank */
+                fprintf(output,"%s",op);
+                if(idx==4 || idx==5)
+                {
+                    temp=strtok(NULL,", ()\n\t");
+                    rs=atoi(&temp[1]);
+                    temp=strtok(NULL,", ()\t\n");
+                    rt=atoi(&temp[1]);
+                    temp=strtok(NULL,", ()\t\n");
+                    int tmp=0;
+                    for(i=0; i<symbol_table_cur_index; i++)
+                    {
+                        if(!strcmp(temp,SYMBOL_TABLE[i].name))
+                        {
+                            tmp=SYMBOL_TABLE[i].address;
+                            break;
+                        }
+                    }
+                    printf("0x%08x 0x%08x\n",tmp,cur_addr);
+                    imm=(tmp-cur_addr-1)/4;
+                }
+                else
+                {
+                    temp=strtok(NULL,", ()\n\t");
+                    rt=atoi(&temp[1]);
+                    temp=strtok(NULL,", ()\t\n");
+                    if(idx==10 || idx==18)
+                    {
+                        if(strchr(temp,'x'))
+                        {
+                            imm=strtol(temp,NULL,16);
+                        }
+                        else
+                        {
+                            imm=atoi(temp);
+                        }
+                        temp=strtok(NULL,", ()\t\n");
+                        rs=atoi(&temp[1]);
+                    }
+                    else
+                    {
+                        if(idx!=9)
+                        {
+                            rs=atoi(&temp[1]);
+                            temp=strtok(NULL,", ()\t\n");
+                        }
+                        if(strchr(temp,'x'))
+                        {
+                            imm=strtol(temp,NULL,16);
+                        }
+                        else
+                        {
+                            imm=atoi(temp);
+                        }
+                    }
+                    
+                }
+                
+                
+                fprintf(output,"%s",num_to_bits(rs,5));
+                fprintf(output,"%s",num_to_bits(rt,5));
+                fprintf(output,"%s",num_to_bits(imm,16));
 #if DEBUG
                 printf("op:%s rs:$%d rt:$%d imm:0x%x\n",
                         op, rs, rt, imm);
@@ -167,6 +280,22 @@ void record_text_section(FILE *output)
 
             case 'J':
                 /* blank */
+                fprintf(output,"%s",op);
+                temp=strtok(NULL,", \t\n");
+                for(i=0; i<symbol_table_cur_index; i++)
+                {
+                    if(!strcmp(temp,SYMBOL_TABLE[i].name))
+                    {
+                        addr=SYMBOL_TABLE[i].address;
+                        break;
+                    }
+                }
+                addr=(addr<<4);
+                addr=(addr>>6);
+                fprintf(output,"%s",num_to_bits(addr,26));
+                
+                
+                
 #if DEBUG
                 printf("op:%s addr:%i\n", op, addr);
 #endif
@@ -193,6 +322,23 @@ void record_data_section(FILE *output)
     /* Print .data section */
     while (fgets(line, 1024, data_seg) != NULL) {
         /* blank */
+        char *temp;
+        uint32_t num;
+        char _line[1024] = {0};
+        strcpy(_line,line);
+        temp=strtok(_line,"\t\n");
+        temp=strtok(NULL,"\t\n");
+        if(strchr(temp,'x'))
+        {
+            num=strtol(temp,NULL,16);
+        }
+        else
+        {
+            num=atoi(temp);
+        }
+        fprintf(output,"%s\n",num_to_bits(num,32));
+        
+        
 #if DEBUG
         printf("0x%08x: ", cur_addr);
         printf("%s", line);
@@ -208,7 +354,7 @@ void make_binary_file(FILE *output)
     char line[1024] = {0};
     rewind(text_seg);
     /* Print line of text segment */
-    while (fgets(line, 1024, text_seg) != NULL) {
+    while (fgets(line, 1024, data_seg) != NULL) {
         printf("%s",line);
     }
     printf("text section size: %d, data section size: %d\n",
@@ -216,7 +362,9 @@ void make_binary_file(FILE *output)
 #endif
 
     /* Print text section size and data section size */
-    /* blank */
+    fprintf(output,"%s\n",num_to_bits(text_section_size,32));
+    fprintf(output,"%s\n",num_to_bits(data_section_size,32));
+    /* blank *////
 
     /* Print .text section */
     record_text_section(output);
@@ -242,11 +390,15 @@ void make_symbol_table(FILE *input)
         /* Check section type */
         if (!strcmp(temp, ".data")) {
             /* blank */
+            cur_section=DATA;
+            address=0;
             data_seg = tmpfile();
             continue;
         }
         else if (!strcmp(temp, ".text")) {
             /* blank */
+            cur_section=TEXT;
+            address=0;
             text_seg = tmpfile();
             continue;
         }
@@ -254,13 +406,79 @@ void make_symbol_table(FILE *input)
         /* Put the line into each segment stream */
         if (cur_section == DATA) {
             /* blank */
+            if(strchr(temp,':'))
+            {
+                symbol_t tsym;
+                strncpy(tsym.name,temp,strlen(temp)-1);
+                tsym.address=MEM_DATA_START+data_section_size;
+                symbol_table_add_entry(tsym);
+            }
+            data_section_size+=BYTES_PER_WORD;
+            while(temp)
+            {
+                if(!strchr(temp,':'))
+                {
+                    fprintf(data_seg,"%s\t",temp);
+                }
+                temp=strtok(NULL,"\t\n");
+            }
+            fprintf(data_seg,"\n");
         }
         else if (cur_section == TEXT) {
             /* blank */
+            if(strchr(temp,':'))
+            {
+                symbol_t tsym;
+                strcpy(tsym.name,strtok(temp,":"));
+                tsym.address=MEM_TEXT_START+text_section_size;
+                symbol_table_add_entry(tsym);
+                continue;
+            }
+            text_section_size+=BYTES_PER_WORD;
+            
+            while(temp)
+            {
+                if(!strcmp(temp,"la"))
+                {
+                    int trd=0;
+                    fprintf(text_seg,"%s\t","lui");
+                    temp=strtok(NULL,", \n");
+                    trd=atoi(&temp[1]);
+                    fprintf(text_seg,"%s, ",temp);
+                    temp=strtok(NULL,", \n");
+                    int i;
+                    uint32_t tmp=0;
+                    for(i=0; i<symbol_table_cur_index; i++)
+                    {
+                        if(!strcmp(temp,SYMBOL_TABLE[i].name))
+                        {
+                            tmp=SYMBOL_TABLE[i].address;
+                            break;
+                        }
+                    }
+                    fprintf(text_seg,"%d",(tmp>>16));
+                    if((tmp<<16))
+                    {
+                        text_section_size+=BYTES_PER_WORD;
+                        tmp=tmp<<16;
+                        tmp=tmp>>16;
+                        fprintf(text_seg,"\n%s\t","ori");
+                        fprintf(text_seg,"$%d, $%d, ",trd,trd);
+                        fprintf(text_seg,"%d",tmp);
+                    }
+                }
+                else
+                {
+                    fprintf(text_seg,"%s\t",temp);
+                }
+                temp=strtok(NULL,"\t\n");
+            }
+            fprintf(text_seg,"\n");
         }
 
         address += BYTES_PER_WORD;
     }
+    
 }
 
 /******************************************************
